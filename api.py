@@ -26,6 +26,7 @@ import uuid
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
@@ -37,6 +38,10 @@ DB_PATH = os.environ.get("WEDDING_DB", "live.sqlite")
 SECRET = os.environ.get("SECRET", "dev-secret-change-me").encode()
 ADMIN = os.environ.get("ADMIN_TOKEN", "dev-admin")
 app = FastAPI(title="Wedding Planner API")
+web_origins = [origin.strip() for origin in os.getenv("WEDDING_WEB_ORIGINS", "").split(",") if origin.strip()]
+if web_origins:
+    app.add_middleware(CORSMiddleware, allow_origins=web_origins, allow_methods=["GET", "POST"],
+                       allow_headers=["Content-Type"])
 
 
 def conn():

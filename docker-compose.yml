@@ -15,6 +15,7 @@ services:
     ports: ["127.0.0.1:8000:8000"]
     environment:
       WEDDING_DB: /data/app.sqlite
+      WEDDING_WEB_ORIGINS: ${WEDDING_WEB_ORIGINS:-}
       SECRET: ${SECRET:?Set SECRET}
       ADMIN_TOKEN: ${ADMIN_TOKEN:?Set ADMIN_TOKEN}
       OLLAMA_URL: http://ollama:11434
