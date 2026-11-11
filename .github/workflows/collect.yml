@@ -1,0 +1,63 @@
+name: Collect and refresh wedding listings
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * *"
+
+permissions:
+  contents: write
+
+concurrency:                    # all database-writing workflows share one lock so they never overwrite each other
+  group: refresh-database
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SEARXNG_URL: http://localhost:8080
+      COLLECTOR_UA: "WeddingDirectoryBot/1.0 (+https://github.com/SamiHaraketi/wedding-planner-directory/issues)"
+    steps:
+      - name: Check three-day cadence
+        id: cadence
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          day=$(( $(date -u +%s) / 86400 ))
+          if [[ "$EVENT" == workflow_dispatch ]] || (( day % 3 == 0 )); then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.cadence.outputs.run == 'true'
+        uses: actions/checkout@v4
+      - if: steps.cadence.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - if: steps.cadence.outputs.run == 'true'
+        run: pip install -r requirements.txt
+      - name: Start SearXNG (open-source metasearch, used to find missing websites)
+        if: steps.cadence.outputs.run == 'true'
+        run: |
+          docker run -d --name searxng -p 8080:8080 -v "$PWD/searxng:/etc/searxng" searxng/searxng
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/healthz >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker logs searxng
+          exit 1
+      - name: Get live database
+        if: steps.cadence.outputs.run == 'true'
+        run: gh release download database -p live.sqlite --clobber
+      - name: Collect websites, contacts, socials, photos, ratings (one batch)
+        if: steps.cadence.outputs.run == 'true'
+        run: python collector.py live.sqlite --batch 100 --workers 8
+      - name: Re-verify listings and print counts
+        if: steps.cadence.outputs.run == 'true'
+        run: |
+          python refresh_engine.py refresh live.sqlite --batch 2000 --workers 30
+          python refresh_engine.py report live.sqlite
+      - name: Publish
+        if: steps.cadence.outputs.run == 'true'
+        run: gh release upload database live.sqlite --clobber

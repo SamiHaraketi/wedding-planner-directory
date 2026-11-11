@@ -1,0 +1,46 @@
+# Always-on stack (one small server): API + continuous collector + SearXNG (website finder) + Ollama (local LLM).
+# Start:  docker compose up -d      First time: docker compose exec ollama ollama pull llama3.1:8b
+# Put the starting database in ./data/app.sqlite (gh release download database -p live.sqlite -O data/app.sqlite)
+services:
+  searxng:
+    image: searxng/searxng
+    volumes: ["./searxng:/etc/searxng"]
+    restart: unless-stopped
+  ollama:
+    image: ollama/ollama
+    volumes: ["ollama:/root/.ollama"]
+    restart: unless-stopped
+  api:
+    build: .
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      WEDDING_DB: /data/app.sqlite
+      SECRET: ${SECRET:?Set SECRET}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?Set ADMIN_TOKEN}
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.1:8b
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    volumes: ["./data:/data"]
+    depends_on: [ollama]
+    restart: unless-stopped
+  collector:
+    build: .
+    command: python collector.py /data/app.sqlite --forever --workers 8 --sleep 120
+    environment:
+      SEARXNG_URL: http://searxng:8080
+      COLLECTOR_UA: "WeddingDirectoryBot/1.0 (+https://github.com/SamiHaraketi/wedding-planner-directory/issues)"
+    volumes: ["./data:/data"]
+    depends_on: [searxng]
+    restart: unless-stopped
+  verifier:
+    build: .
+    command: sh -c "while true; do python refresh_engine.py refresh /data/app.sqlite --batch 5000 --workers 40; python sync_ical.py /data/app.sqlite; sleep 3600; done"
+    volumes: ["./data:/data"]
+    restart: unless-stopped
+  learner:
+    build: .
+    command: sh -c "while true; do sleep 604800; python learn.py /data/app.sqlite; done"
+    volumes: ["./data:/data"]
+    restart: unless-stopped
+volumes:
+  ollama:

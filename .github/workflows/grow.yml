@@ -1,0 +1,42 @@
+name: Grow the directory (Overture Maps)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Overture release id, e.g. 2026-10-21.0 (see docs.overturemaps.org/getting-data)"
+        required: true
+        default: "2026-10-21.0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-database
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE: ${{ github.event.inputs.release || vars.OVERTURE_RELEASE || '2026-10-21.0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install duckdb
+      - name: Import every region
+        run: |
+          set -e
+          for row in $(jq -c '.[]' overture_regions.json); do
+            name=$(echo "$row" | jq -r .name); bbox=$(echo "$row" | jq -r .bbox)
+            country=$(echo "$row" | jq -r '.country // empty')
+            python overture_import.py "ov_$name.sqlite" --release "$RELEASE" --bbox="$bbox" ${country:+--country $country}
+          done
+      - name: Add new listings to the live database (existing ones keep their verification history)
+        run: |
+          gh release download database -p live.sqlite --clobber
+          for f in ov_*.sqlite; do python refresh_engine.py merge-new live.sqlite "$f"; done
+          gh release upload database live.sqlite --clobber

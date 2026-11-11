@@ -1,0 +1,39 @@
+name: Refresh and re-verify listings
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-database
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Get live database
+        run: gh release download database -p live.sqlite --clobber
+      - name: Re-check the stalest / most important listings
+        run: python refresh_engine.py refresh live.sqlite --batch 25000 --workers 60
+      - name: Report
+        run: python refresh_engine.py report live.sqlite | tee report.txt
+      - name: Publish updated database
+        run: |
+          cp live.sqlite wedding_live.sqlite
+          python - <<'PY'
+          import sqlite3, csv
+          db = sqlite3.connect("live.sqlite")
+          cur = db.execute("SELECT * FROM public_listings")
+          with open("public_listings.csv", "w", newline="", encoding="utf-8") as f:
+              w = csv.writer(f); w.writerow([d[0] for d in cur.description]); w.writerows(cur)
+          PY
+          gh release upload database live.sqlite public_listings.csv --clobber

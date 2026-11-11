@@ -1,0 +1,99 @@
+name: Build wedding directory database
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "0 3 1 * *"   # monthly refresh
+
+concurrency:
+  group: refresh-database
+  cancel-in-progress: false
+
+jobs:
+  regions:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: m
+        run: echo "matrix=$(jq -c . regions.json)" >> "$GITHUB_OUTPUT"
+
+  import:
+    needs: regions
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        region: ${{ fromJson(needs.regions.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install osmium
+      - name: Download extract
+        run: curl -fL --retry 5 --retry-delay 10 -o region.osm.pbf "${{ matrix.region.url }}"
+      - name: Import
+        run: python import_osm.py region.osm.pbf ${{ matrix.region.name }}.sqlite --country ${{ matrix.region.country }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: part-${{ matrix.region.name }}
+          path: ${{ matrix.region.name }}.sqlite
+
+  merge:
+    needs: import
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/download-artifact@v4
+        with: { pattern: part-*, path: parts, merge-multiple: true }
+      - name: Merge
+        run: python merge_export.py wedding_directory.sqlite parts/*.sqlite
+      - name: Verify websites (liveness check)
+        run: python verify_sites.py wedding_directory.sqlite --limit 200000 --workers 60
+      - name: Final export
+        run: python merge_export.py final.sqlite wedding_directory.sqlite | tee report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wedding-directory
+          path: |
+            final.sqlite
+            final.csv
+            report.txt
+
+  publish:
+    needs: merge
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/download-artifact@v4
+        with: { name: wedding-directory, path: build }
+      - name: Create the live database, or add new listings to the existing one
+        run: |
+          gh release view database >/dev/null 2>&1 || gh release create database --title "Live database" --notes "Maintained automatically"
+          if gh release download database -p live.sqlite --clobber 2>/dev/null; then
+            python refresh_engine.py merge-new live.sqlite build/final.sqlite
+          else
+            cp build/final.sqlite live.sqlite
+            python refresh_engine.py report live.sqlite >/dev/null 2>&1 || true
+          fi
+          gh release upload database live.sqlite --clobber

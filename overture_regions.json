@@ -1,0 +1,5 @@
+[
+  {"name": "europe",  "bbox": "-25,34,45,72",     "country": null},
+  {"name": "canada",  "bbox": "-141,41.5,-52,84", "country": "CA"},
+  {"name": "usa",     "bbox": "-125,24,-66,50",   "country": "US"}
+]

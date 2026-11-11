@@ -1,0 +1,10 @@
+osmium
+duckdb
+fastapi
+uvicorn
+httpx
+ortools
+extruct
+phonenumbers
+beautifulsoup4
+lxml
