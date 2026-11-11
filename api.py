@@ -294,19 +294,54 @@ def parse_text(q: str, use_llm: bool = True):
 
 @app.get("/ask")
 def ask(request: Request, q: str, sid: Optional[str] = None, use_llm: bool = True):
-    """One box for everything: parse the couple's sentence, then return packages for it."""
+    return ask_with_filters(request, q, sid, use_llm, {})
+
+
+class AskTurn(BaseModel):
+    q: str = Field(min_length=1, max_length=500)
+    sid: Optional[str] = Field(default=None, pattern=r"^[a-zA-Z0-9_-]{1,64}$")
+    filters: dict = Field(default_factory=dict)
+    use_llm: bool = True
+
+
+@app.post("/ask")
+def ask_turn(request: Request, turn: AskTurn):
+    """Carry the previous response's filters into the next conversation turn."""
+    return ask_with_filters(request, turn.q, turn.sid, turn.use_llm, turn.filters)
+
+
+def ask_with_filters(request, q, sid, use_llm, previous):
     sid = sid or uuid.uuid4().hex[:16]
     db = conn()
     cities = [r[0] for r in db.execute("SELECT DISTINCT city FROM public_listings WHERE city IS NOT NULL")]
-    f, method = nlq.parse(q[:500], cities, use_llm)
+    previous = nlq.sanitize(previous, cities)
+    updates, method = nlq.parse(q[:500], cities, use_llm)
+    if "date" in updates:
+        previous.pop("month", None)
+        previous.pop("year", None)
+    elif "month" in updates:
+        previous.pop("date", None)
+        previous.pop("year", None)
+    f = {**previous, **updates}
+    if "priorities" in updates:
+        f["priorities"] = {**previous.get("priorities", {}), **updates["priorities"]}
     missing = [k for k in ("city", "budget", "guests") if k not in f]
+    next_question = next((question for key, question in (
+        ("city", "Which city is the wedding in?"),
+        ("guests", "How many guests are you planning for?"),
+        ("budget", "What is your total budget, and in which currency?"),
+        ("date", "What date are you considering?"),
+        ("styles", "What style do you have in mind?"),
+        ("priorities", "What matters most to you: price, style, reviews, or distance?"),
+    ) if key not in f), None)
     if "city" not in f:
         return {"sid": sid, "filters": f, "method": method, "missing": missing, "packages": [],
-                "message": "Which city is the wedding in?"}
+                "message": next_question, "next_question": next_question}
     query = dict(city=f["city"], country=None, lat=None, lng=None, categories=f.get("categories"),
                  budget=f.get("budget"), guests=f.get("guests", 80), styles=f.get("styles", []),
                  date=f.get("date"), currency=f.get("currency", "EUR"), radius_km=30,
                  priorities=f.get("priorities", {}))
     ctx, pk = ranker.build_packages(db, query, base=str(request.base_url).rstrip("/"), sid=sid)
     return {"sid": sid, "filters": f, "method": method, "missing": missing, "packages": pk,
+            "next_question": next_question,
             "message": None if not missing else "Add " + " and ".join(missing) + " to sharpen the results."}

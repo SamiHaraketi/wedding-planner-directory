@@ -46,7 +46,7 @@ NEW_COLS = {
     "price_source_url": "TEXT", "price_checked_at": "TEXT",
     "evidence": "TEXT",   # JSON: which checks passed on the last run
     "price_unit": "TEXT", "rating": "REAL", "rating_count": "INTEGER", "rating_source": "TEXT",
-    "photo_url": "TEXT", "style_tags": "TEXT", "capacity_max": "INTEGER",
+    "description_source_url": "TEXT", "photo_url": "TEXT", "style_tags": "TEXT", "capacity_max": "INTEGER",
     "google_place_id": "TEXT", "ical_url": "TEXT", "vendor_verified": "INTEGER DEFAULT 0",
     "tiktok": "TEXT", "pinterest": "TEXT", "youtube": "TEXT", "linkedin": "TEXT", "whatsapp": "TEXT",
     "collected_at": "TEXT", "collect_next_at": "TEXT", "collect_fail": "INTEGER DEFAULT 0",
@@ -84,7 +84,7 @@ def migrate(db):
     db.execute("DROP VIEW IF EXISTS public_listings")
     db.execute(f"""CREATE VIEW public_listings AS
         SELECT id, category, name, lat, lng, city, country, address, phone, email, website,
-               instagram, facebook, opening_hours, source_url, last_checked_at, confidence, status,
+               instagram, facebook, opening_hours, description, description_source_url, source_url, last_checked_at, confidence, status,
                rating, rating_count, rating_source, photo_url, style_tags, capacity_max,
                google_place_id, ical_url, vendor_verified,
                tiktok, pinterest, youtube, linkedin, whatsapp, collected_at,

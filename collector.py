@@ -345,6 +345,11 @@ def collect_site(row, website):
                 pages.append((f, h))
     data = {"ok": True, "phones": [], "emails": [], "socials": {}, "photos": [], "rating": None, "price": None,
             "styles": [], "capacity": None, "address": None, "pages": [p[0] for p in pages], "identity": False}
+    meta = soup0.find("meta", attrs={"name": "description"}) or soup0.find("meta", property="og:description")
+    if meta and isinstance(meta.get("content"), str):
+        description = " ".join(BeautifulSoup(meta["content"], "lxml").get_text(" ", strip=True).split())
+        if 30 <= len(description) <= 320:
+            data["description"] = description
     identity = bool(row["website"])        # a website we already hold for this listing is trusted
     for url, h in pages:
         soup = BeautifulSoup(h, "lxml")
@@ -429,6 +434,8 @@ def apply(db, row, res):
         return stats
     src = d["final_url"]
     sets = {}
+    if d.get("description"):
+        sets.update(description=d["description"], description_source_url=src)
     if d["phones"] and not row["phone"]:
         sets["phone"] = d["phones"][0]
     if d["emails"] and not row["email"]:

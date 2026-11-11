@@ -138,6 +138,21 @@ assert pk_r.status_code == 200 and pk_r.json()["packages"]
 assert c.get("/search", params=dict(city="Nowhere")).status_code == 404
 print("8 ok  /packages and unknown city handling")
 
+ask_response = c.post("/ask", json={"q": "Wedding in Lisboa under 25000 for 80 guests", "use_llm": False})
+assert ask_response.status_code == 200, ask_response.text
+first_turn = ask_response.json()
+follow = c.post("/ask", json={"q": "Make it 100 guests", "filters": first_turn["filters"],
+                              "sid": first_turn["sid"], "use_llm": False})
+assert follow.status_code == 200, follow.text
+follow_turn = follow.json()
+assert follow_turn["sid"] == first_turn["sid"]
+assert follow_turn["filters"]["city"] == "Lisboa"
+assert follow_turn["filters"]["budget"] == 25000
+assert follow_turn["filters"]["guests"] == 100
+assert follow_turn["packages"], follow_turn
+print("8b ok  conversational follow-up keeps the city and budget and rebuilds packages")
+
+
 # vendor self-service: token required
 lid = first["id"]
 assert c.post(f"/vendor/{lid}/availability?token=bad", json={"busy": ["2027-07-01"]}).status_code == 403

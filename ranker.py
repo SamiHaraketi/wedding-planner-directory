@@ -236,10 +236,14 @@ def score_row(ctx, row, cat, anchor, own=None, avail=None):
         den = own_n * 2 + site_n + m
         R = num / den
         f["quality"] = clip((R - 3.0) / 2.0)
-        rating, rating_n = round(R, 2), own_n + (row["rating_count"] or 0)
     else:
         f["quality"] = 0.40
-        rating, rating_n = None, 0
+
+
+    if own_n:
+        rating, rating_n, rating_source = round(own_avg, 2), own_n, "Wedding Planner couples"
+    else:
+        rating, rating_n, rating_source = row["rating"], row["rating_count"] or 0, row["rating_source"]
 
     # style
     tags = [t for t in (row["style_tags"] or "").split(",") if t]
@@ -283,7 +287,9 @@ def score_row(ctx, row, cat, anchor, own=None, avail=None):
         "score": round(score * 100), "distance_km": round(d, 1),
         "cost": {"amount": round(cost) if cost else None, "currency": ctx["cur"], "basis": basis,
                  "unit": unit, "source_url": row["price_source_url"], "checked_at": row["price_checked_at"]},
-        "rating": rating, "rating_count": rating_n, "styles": tags,
+        "rating": rating, "rating_count": rating_n, "rating_source": rating_source, "styles": tags,
+        "description": row["description"],
+        "description_source_url": (row["description_source_url"] or row["source_url"]) if row["description"] else None,
         "availability": {"free": "available", None: "unknown"}.get(avail, "unknown"),
         "why": why, "caveats": caveats, "photo": row["photo_url"],
         "confidence": row["confidence"], "last_checked_at": row["last_checked_at"],

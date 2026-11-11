@@ -176,19 +176,19 @@ def sanitize(d, cities):
             pass
     if d.get("month") and str(d["month"]).isdigit() and 1 <= int(d["month"]) <= 12:
         out["month"] = int(d["month"])
-        if d.get("year"):
+        if str(d.get("year", "")).isdigit() and 1900 <= int(d["year"]) <= 9999:
             out["year"] = int(d["year"])
-    st = [s for s in (d.get("styles") or []) if s in STYLE_NAMES]
+    st = [s for s in (d["styles"] if isinstance(d.get("styles"), list) else []) if s in STYLE_NAMES]
     if st:
         out["styles"] = st
-    ct = [c for c in (d.get("categories") or []) if c in CATS]
+    ct = [c for c in (d["categories"] if isinstance(d.get("categories"), list) else []) if c in CATS]
     if ct:
         out["categories"] = ct
     if d.get("currency") and str(d["currency"]).upper() in ("EUR", "GBP", "USD", "CAD", "CHF"):
         out["currency"] = str(d["currency"]).upper()
     if isinstance(d.get("priorities"), dict):
         out["priorities"] = {k: float(v) for k, v in d["priorities"].items()
-                             if k in ("price", "quality", "style", "proximity") and 0 < float(v) <= 4}
+                             if k in ("price", "quality", "style", "proximity") and type(v) in (int, float) and 0 < v <= 4}
     return out
 
 
