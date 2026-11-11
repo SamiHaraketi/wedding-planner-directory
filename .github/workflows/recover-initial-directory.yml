@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: refresh-database
+  group: initial-directory-publication
   cancel-in-progress: false
 
 permissions:
@@ -44,17 +44,11 @@ jobs:
           PY
       - name: Publish directory snapshot
         run: |
-          if gh release view database --json assets --jq '.assets[].name' > release-assets.txt; then
-            if grep -Fxq live.sqlite release-assets.txt; then
-              gh release download database -p live.sqlite
-              python refresh_engine.py merge-new live.sqlite initial.sqlite
-            else
-              cp initial.sqlite live.sqlite
-            fi
-            gh release upload database live.sqlite --clobber
-          else
+          if ! gh release view database --json assets --jq '.assets[].name' | grep -Fxq live.sqlite; then
             cp initial.sqlite live.sqlite
-            gh release create database live.sqlite --title "Live database" --notes "Initial snapshot from 29 completed regional imports. France and Canada were cancelled in the source run and are pending. Website re-verification is handled by the refresh workflow."
+            gh release create database live.sqlite --title "Live database" --notes "Initial snapshot from 29 regional artifacts. France and Canada are pending."
+          else
+            gh release download database -p live.sqlite
           fi
           python refresh_engine.py report live.sqlite | tee -a "$GITHUB_STEP_SUMMARY"
           gh release view database --json url,assets
