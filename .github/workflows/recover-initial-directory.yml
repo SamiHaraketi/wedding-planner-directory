@@ -1,0 +1,60 @@
+name: Publish completed directory imports
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/recover-initial-directory.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-database
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42982437334
+          pattern: part-*
+          path: parts
+          merge-multiple: true
+      - name: Merge and validate public import data
+        run: |
+          shopt -s nullglob
+          parts=(parts/*.sqlite)
+          test "${#parts[@]}" -eq 29
+          python merge_export.py initial.sqlite "${parts[@]}"
+          python - <<'PY'
+          import sqlite3
+          with sqlite3.connect("initial.sqlite") as db:
+              assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+              assert db.execute("SELECT COUNT(*) FROM listings").fetchone()[0] > 0
+          PY
+      - name: Publish directory snapshot
+        run: |
+          if gh release view database --json assets --jq '.assets[].name' > release-assets.txt; then
+            if grep -Fxq live.sqlite release-assets.txt; then
+              gh release download database -p live.sqlite
+              python refresh_engine.py merge-new live.sqlite initial.sqlite
+            else
+              cp initial.sqlite live.sqlite
+            fi
+            gh release upload database live.sqlite --clobber
+          else
+            cp initial.sqlite live.sqlite
+            gh release create database live.sqlite --title "Live database" --notes "Initial snapshot from 29 completed regional imports. France and Canada were cancelled in the source run and are pending. Website re-verification is handled by the refresh workflow."
+          fi
+          python refresh_engine.py report live.sqlite | tee -a "$GITHUB_STEP_SUMMARY"
+          gh release view database --json url,assets
