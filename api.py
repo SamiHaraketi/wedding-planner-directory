@@ -37,6 +37,7 @@ import suggest
 DB_PATH = os.environ.get("WEDDING_DB", "live.sqlite")
 SECRET = os.environ.get("SECRET", "dev-secret-change-me").encode()
 ADMIN = os.environ.get("ADMIN_TOKEN", "dev-admin")
+PUBLIC_API_URL = os.environ.get("WEDDING_PUBLIC_API_URL", "").rstrip("/")
 app = FastAPI(title="Wedding Planner API")
 web_origins = [origin.strip() for origin in os.getenv("WEDDING_WEB_ORIGINS", "").split(",") if origin.strip()]
 if web_origins:
@@ -44,11 +45,23 @@ if web_origins:
                        allow_headers=["Content-Type"])
 
 
+def api_base(request):
+    return PUBLIC_API_URL or str(request.base_url).rstrip("/")
+
+
 def conn():
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
     ranker.init(db)
     return db
+
+
+@app.get("/healthz")
+def health():
+    with sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True) as db:
+        if not db.execute("SELECT 1 FROM public_listings LIMIT 1").fetchone():
+            raise HTTPException(503, "Directory is empty")
+    return {"status": "ok"}
 
 
 def now():
@@ -117,7 +130,7 @@ def search(request: Request, city: Optional[str] = None, country: Optional[str] 
     for items in shown.values():
         ranker.attach_photos(db, items)
     log_events(db, sid, q, shown)
-    base = str(request.base_url).rstrip("/")
+    base = api_base(request)
     return {"sid": sid, "weights": {k: round(v, 3) for k, v in ctx["weights"].items()},
             "learned_influence": round(ctx["learned_alpha"], 2),
             "results": {c: [ranker.public(it, base, sid, i) for i, it in enumerate(items)]
@@ -137,7 +150,7 @@ def packages(request: Request, city: Optional[str] = None, country: Optional[str
         raise HTTPException(400, "city or lat/lng required")
     db = conn()
     try:
-        ctx, pk = ranker.build_packages(db, q, base=str(request.base_url).rstrip("/"), sid=sid)
+        ctx, pk = ranker.build_packages(db, q, base=api_base(request), sid=sid)
     except ValueError as e:
         raise HTTPException(404, str(e))
     # log impressions of the vendors shown in packages (features are re-derived by /search later)
@@ -202,7 +215,7 @@ def approve(rid: int, admin: str):
 def claim_link(lid: int, admin: str, request: Request):
     if not hmac.compare_digest(admin, ADMIN):
         raise HTTPException(403)
-    base = str(request.base_url).rstrip("/")
+    base = api_base(request)
     return {"availability": f"{base}/vendor/{lid}/availability?token={token_for(lid)}", "token": token_for(lid)}
 
 
@@ -346,7 +359,7 @@ def ask_with_filters(request, q, sid, use_llm, previous):
                  budget=f.get("budget"), guests=f.get("guests", 80), styles=f.get("styles", []),
                  date=f.get("date"), currency=f.get("currency", "EUR"), radius_km=30,
                  priorities=f.get("priorities", {}))
-    ctx, pk = ranker.build_packages(db, query, base=str(request.base_url).rstrip("/"), sid=sid)
+    ctx, pk = ranker.build_packages(db, query, base=api_base(request), sid=sid)
     return {"sid": sid, "filters": f, "method": method, "missing": missing, "packages": pk,
             "next_question": next_question,
             "message": None if not missing else "Add " + " and ".join(missing) + " to sharpen the results."}

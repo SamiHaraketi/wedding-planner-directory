@@ -1,0 +1,38 @@
+name: Check API against public listings
+on:
+  push:
+    branches: [main]
+    paths: [bootstrap_release.py, api.py, .github/workflows/release-smoke.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      WEDDING_DB: ${{ runner.temp }}/wedding.sqlite
+      OLLAMA_DISABLE: "1"
+      WEDDING_PUBLIC_API_URL: https://api.example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - run: python bootstrap_release.py
+      - name: Check listings and a real vendor link
+        run: |
+          python - <<'PY'
+          import api
+          from fastapi.testclient import TestClient
+          with TestClient(api.app) as client:
+              assert client.get("/healthz").status_code == 200
+              assert client.get("/suggest/cities", params={"q": "lis"}).status_code == 200
+              turn = client.post("/ask", json={"q": "Wedding in Lisbon for 80 guests under 25000 EUR", "use_llm": False})
+              assert turn.status_code == 200, turn.text
+              with api.conn() as db:
+                  vendor = db.execute("SELECT id FROM public_listings WHERE website LIKE 'https://%' LIMIT 1").fetchone()
+              assert vendor
+              link = client.get(f"/go/{vendor[0]}", params={"to": "website"}, follow_redirects=False)
+              assert link.is_redirect and link.headers["location"].startswith("https://")
+          PY
