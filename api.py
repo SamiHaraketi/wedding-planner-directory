@@ -37,7 +37,7 @@ import suggest
 DB_PATH = os.environ.get("WEDDING_DB", "live.sqlite")
 SECRET = os.environ.get("SECRET", "dev-secret-change-me").encode()
 ADMIN = os.environ.get("ADMIN_TOKEN", "dev-admin")
-PUBLIC_API_URL = os.environ.get("WEDDING_PUBLIC_API_URL", "").rstrip("/")
+PUBLIC_API_URL = (os.environ.get("WEDDING_PUBLIC_API_URL") or os.environ.get("RENDER_EXTERNAL_URL", "")).rstrip("/")
 app = FastAPI(title="Wedding Planner API")
 web_origins = [origin.strip() for origin in os.getenv("WEDDING_WEB_ORIGINS", "").split(",") if origin.strip()]
 if web_origins:
