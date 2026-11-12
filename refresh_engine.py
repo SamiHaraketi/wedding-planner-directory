@@ -333,6 +333,8 @@ def merge_new(live, new):
 
 def report(path):
     db = sqlite3.connect(path)
+    migrate(db)
+    db.commit()
     print("PUBLIC listings (visible in app):")
     for r in db.execute("SELECT category, COUNT(*) FROM public_listings GROUP BY 1 ORDER BY 1"):
         print(f"  {r[0]:<14}{r[1]}")

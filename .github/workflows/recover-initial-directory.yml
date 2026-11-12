@@ -43,9 +43,11 @@ jobs:
               assert db.execute("SELECT COUNT(*) FROM listings").fetchone()[0] > 0
           PY
       - name: Publish directory snapshot
+        shell: bash
         run: |
           if ! gh release view database --json assets --jq '.assets[].name' | grep -Fxq live.sqlite; then
             cp initial.sqlite live.sqlite
+            python refresh_engine.py report live.sqlite
             gh release create database live.sqlite --title "Live database" --notes "Initial snapshot from 29 regional artifacts. France and Canada are pending."
           else
             gh release download database -p live.sqlite

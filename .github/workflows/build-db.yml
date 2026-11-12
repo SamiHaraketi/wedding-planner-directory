@@ -2,10 +2,6 @@ name: Build wedding directory database
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: [Tests]
-    types: [completed]
-    branches: [main]
   schedule:
     - cron: "0 3 1 * *"   # monthly refresh
 
@@ -15,11 +11,6 @@ concurrency:
 
 jobs:
   regions:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
@@ -94,6 +85,6 @@ jobs:
             python refresh_engine.py merge-new live.sqlite build/final.sqlite
           else
             cp build/final.sqlite live.sqlite
-            python refresh_engine.py report live.sqlite >/dev/null 2>&1 || true
+            python refresh_engine.py report live.sqlite
           fi
           gh release upload database live.sqlite --clobber
